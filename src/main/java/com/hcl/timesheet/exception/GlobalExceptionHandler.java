@@ -5,14 +5,18 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
 import com.hcl.timesheet.utility.TimesheetUtility;
+
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * @author Laxman
  *
  */
+@Slf4j
 @ControllerAdvice
 @RestController
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
@@ -22,24 +26,21 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	 * @param ex
 	 * @return
 	 */
-	@ExceptionHandler(RecordNotFoundException.class)
-	public ResponseEntity<ErrorResponse> recordNotFoundException(RecordNotFoundException ex) {
-		ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), TimesheetUtility.STATUS_FAIL);
+	@ExceptionHandler(CustomException.class)
+	public ResponseEntity<ErrorResponse> recordNotFoundException(CustomException ex) {
 
-		return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
-	}
-
-	@ExceptionHandler(InvalidDateException.class)
-	public ResponseEntity<ErrorResponse> invalidDateException(InvalidDateException ex) {
+		log.info(" :: recordNotFoundException -- ");
 		ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), TimesheetUtility.STATUS_FAIL);
 
 		return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
 	}
 	
-	@ExceptionHandler(HolidayDateException.class)
-	public ResponseEntity<ErrorResponse> holidayDateException(HolidayDateException ex) {
-		ErrorResponse errorResponse = new ErrorResponse(ex.getMessage(), TimesheetUtility.STATUS_FAIL);
+	@ExceptionHandler(HttpStatusCodeException.class)
+	public ResponseEntity<String> parentException(HttpStatusCodeException ex) {
 
-		return new ResponseEntity<>(errorResponse, HttpStatus.NOT_FOUND);
+		log.info(" :: parentException -- ");
+		return ResponseEntity.status(ex.getRawStatusCode()).headers(ex.getResponseHeaders())
+				.body(ex.getResponseBodyAsString());
 	}
+	
 }

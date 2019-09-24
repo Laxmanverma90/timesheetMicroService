@@ -6,7 +6,7 @@ import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import com.hcl.timesheet.Entity.Timesheet;
+import com.hcl.timesheet.entity.Timesheet;
 
 public interface TimesheetRepository extends JpaRepository<Timesheet, Integer> {
 

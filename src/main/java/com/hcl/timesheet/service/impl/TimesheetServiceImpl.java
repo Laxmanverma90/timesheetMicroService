@@ -7,19 +7,14 @@ import java.util.Optional;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
 
-import com.hcl.timesheet.Entity.Timesheet;
 import com.hcl.timesheet.dto.ApproveDto;
 import com.hcl.timesheet.dto.EmployeeDto;
 import com.hcl.timesheet.dto.ResponseDto;
 import com.hcl.timesheet.dto.TimesheetDto;
-import com.hcl.timesheet.exception.AlreadyTimesheetSubmitted;
-import com.hcl.timesheet.exception.InvalidDateException;
-import com.hcl.timesheet.exception.RecordNotFoundException;
+import com.hcl.timesheet.entity.Timesheet;
+import com.hcl.timesheet.exception.CustomException;
 import com.hcl.timesheet.repository.TimesheetRepository;
 import com.hcl.timesheet.service.TimesheetService;
 import com.hcl.timesheet.utility.Status;
@@ -42,9 +37,6 @@ public class TimesheetServiceImpl implements TimesheetService {
 	@Autowired
 	private TimesheetUtility timesheetUtility;
 
-	@Autowired
-	private RestTemplate restTemplate;
-
 	@Value("${cant.submit.for.future.date}")
 	private String cantSubmitForFutureDate;
 
@@ -53,12 +45,6 @@ public class TimesheetServiceImpl implements TimesheetService {
 
 	@Value("${working.hours}")
 	private Integer workingHours;
-
-	@Value("${employee.getManagerId.url}")
-	private String employeeGetManagerIdUrl;
-
-	@Value("${holidays.url}")
-	private String holidaysUrl;
 
 	@Value("${employee.record.notFound}")
 	private String employeeRecordNotFound;
@@ -72,34 +58,44 @@ public class TimesheetServiceImpl implements TimesheetService {
 	@Override
 	public ResponseDto submitTimesheet(TimesheetDto timesheetDto) {
 
+		log.info(" :: submitTimesheet -- START ----");
+
 		List<LocalDate> holidayDtos = validateSubmission(timesheetDto);
-		
+
 		Optional<Timesheet> timesheet = timesheetRepository.findByForDateAndEmployeeId(timesheetDto.getFromDate(),
 				timesheetDto.getEmployeeId());
 		if (timesheet.isPresent()) {
-			throw new AlreadyTimesheetSubmitted(alreadyTimesheetSubmitted);
+			throw new CustomException(alreadyTimesheetSubmitted);
 		}
 
-		EmployeeDto employeeDto = getEmployeeManager(timesheetDto.getEmployeeId());
+		log.info(" :: submitTimesheet -- getting managerId based on EmployeeId ----");
+		EmployeeDto employeeDto = timesheetUtility.getEmployeeManager(timesheetDto.getEmployeeId());
 
 		if (employeeDto == null) {
-			throw new RecordNotFoundException(employeeRecordNotFound);
+			throw new CustomException(employeeRecordNotFound);
 		}
 
-		
 		List<Timesheet> timesheets = new ArrayList<>();
-//		LocalDate appliedLocalDate = timesheetDto.getFromDate();
 		LocalDate submittedDate = LocalDate.now();
-//		int noFDays = timesheetUtility.calculateDays(timesheetDto.getFromDate(), timesheetDto.getToDate());
 
-		for (LocalDate date = timesheetDto.getFromDate(); date.isBefore(timesheetDto.getToDate().plusDays(1)); date = date.plusDays(1)) {
-			if(date.getDayOfWeek().equals(WeekEnd.SATURDAY)||date.getDayOfWeek().equals(WeekEnd.SUNDAY) || holidayDtos.contains(date)) {
+		/**
+		 * Looping fromDate to toDate if there is any WEEKEND/HOLIDAY will skip saving
+		 * to database for the same
+		 */
+		log.info(" :: submitTimesheet -- LOOPing fromDate to toDate ----");
+		for (LocalDate date = timesheetDto.getFromDate(); date
+				.isBefore(timesheetDto.getToDate().plusDays(1)); date = date.plusDays(1)) {
+			if (date.getDayOfWeek().name().equals(WeekEnd.SATURDAY.name())
+					|| date.getDayOfWeek().name().equals(WeekEnd.SUNDAY.name()) || holidayDtos.contains(date)) {
 				continue;
 			}
-			timesheets.add(Timesheet.builder().employeeId(timesheetDto.getEmployeeId()).reportingManagerId(employeeDto.getManagerId())
-					.forDate(date).workingHours(timesheetDto.getWorkingHours())
-					.submittedDate(submittedDate).status(Status.PENDING.value).build());
+			timesheets.add(Timesheet.builder().employeeId(timesheetDto.getEmployeeId())
+					.reportingManagerId(employeeDto.getManagerId()).forDate(date)
+					.workingHours(timesheetDto.getWorkingHours()).lastModifiedDate(submittedDate)
+					.remarks(TimesheetUtility.EMPTY).submittedDate(submittedDate).status(Status.PENDING.value).build());
 		}
+
+		log.info(" :: submitTimesheet -- SAVING all record ----");
 		timesheetRepository.saveAll(timesheets);
 		return ResponseDto.builder().status(TimesheetUtility.STATUS_SUCCCESS)
 				.message(TimesheetUtility.TIMESHEET_SUCCESS_MESSAGE).build();
@@ -108,19 +104,28 @@ public class TimesheetServiceImpl implements TimesheetService {
 	/**
 	 * @param timesheetDto
 	 * @return Integer
+	 * @date 19 SEPT 2019
 	 * 
+	 *       Validation fromDate & todate with eachother and current date, So that
+	 *       user can't submit for future date and form date cann't be after toDate.
+	 * 
+	 *       Getting Holidays for between fromDate & toDate from Holiday Service
 	 */
 	public List<LocalDate> validateSubmission(TimesheetDto timesheetDto) {
+
+		log.info(" :: validateSubmission -- START ----");
+
 		if (timesheetDto.getFromDate().compareTo(LocalDate.now()) > 0
 				|| timesheetDto.getToDate().compareTo(LocalDate.now()) > 0) {
-			throw new InvalidDateException(cantSubmitForFutureDate);
+			throw new CustomException(cantSubmitForFutureDate);
 		} else if (timesheetDto.getToDate().isBefore(timesheetDto.getFromDate())) {
-			throw new InvalidDateException(toDateIsBeforeFromDate);
+			throw new CustomException(toDateIsBeforeFromDate);
 		}
 
 		/**
 		 * preparing query parameter
 		 */
+		log.info(" :: validateSubmission -- preparing queryParameter ----");
 		StringBuilder sb = new StringBuilder("?");
 		for (LocalDate date = timesheetDto.getFromDate(); date
 				.isBefore(timesheetDto.getToDate().plusDays(1)); date = date.plusDays(1)) {
@@ -132,50 +137,25 @@ public class TimesheetServiceImpl implements TimesheetService {
 		/**
 		 * Hitting API to get List of holidays
 		 */
-		List<LocalDate> holidayDtos = restTemplate.exchange(holidaysUrl + holidayDateUrl, HttpMethod.GET, null,
-				new ParameterizedTypeReference<List<LocalDate>>() {
-				}).getBody();
-return holidayDtos;
-	/*	if (holidayDtos != null && !holidayDtos.isEmpty()) {
-			StringBuilder holidaybuilder = new StringBuilder("?");
-			holidayDtos.stream().forEach(holidayDto -> holidaybuilder.append(", " + holidayDto.getHolidayDate()));
-			throw new HolidayDateException(holidayOccured + holidaybuilder.toString());
-		}*/
-
-		/*
-		 * Optional<Timesheet> timesheet =
-		 * timesheetRepository.findByForDateAndEmployeeId(timesheetDto.getFromDate(),
-		 * timesheetDto.getEmployeeId()); if (timesheet.isPresent()) { throw new
-		 * AlreadyTimesheetSubmitted(alreadyTimesheetSubmitted); }
-		 * 
-		 * EmployeeDto employeeDto = getEmployeeManager(timesheetDto.getEmployeeId());
-		 * 
-		 * if (employeeDto == null) { throw new
-		 * RecordNotFoundException(employeeRecordNotFound); } return
-		 * employeeDto.getManagerId();
-		 */
+		log.info(" :: validateSubmission -- calling HolidatService ----");
+		return timesheetUtility.webServiceCall(holidayDateUrl);
 	}
 
-	public EmployeeDto getEmployeeManager(Integer employeeId) {
-
-		log.info("TimesheetServiceImpl :: getEmployeeManager : employeeId -- {}", employeeId);
-		EmployeeDto employeeDto = restTemplate
-				.getForEntity(employeeGetManagerIdUrl + employeeId, EmployeeDto.class).getBody();
-		log.info("TimesheetServiceImpl :: managerid -- {}", employeeDto.getManagerId());
-
-		return employeeDto;
-//		return EmployeeDto.builder().employeeId(101).managerId(1010).build();
-	}
-
+	/**
+	 * @param ApproveDto approveDto, Integer managerId
+	 * @return ResponseDto
+	 * @date 19 SEPT 2019
+	 */
 	@Override
 	public ResponseDto approveTimesheet(ApproveDto approveDto, Integer managerId) {
 
+		log.info(" :: approveTimesheet -- START ----");
 		Optional<List<Timesheet>> timesheetOptional = timesheetRepository
 				.findByEmployeeIdAndReportingManagerIdAndTimesheetIdIn(approveDto.getEmployeeId(), managerId,
 						approveDto.getTimesheetIds());
 
 		if (!timesheetOptional.isPresent()) {
-			throw new RecordNotFoundException(employeeRecordNotFound);
+			throw new CustomException(employeeRecordNotFound);
 		}
 
 		LocalDate currentDate = LocalDate.now();
@@ -194,9 +174,8 @@ return holidayDtos;
 
 		timesheetRepository.saveAll(timesheetOptional.get());
 
-		ResponseDto responseDto = ResponseDto.builder().message(TimesheetUtility.VERIFED_SUCCESS_MESSAGE)
+		return ResponseDto.builder().message(TimesheetUtility.VERIFED_SUCCESS_MESSAGE)
 				.status(TimesheetUtility.STATUS_SUCCCESS).build();
-		return responseDto;
 	}
 
 }

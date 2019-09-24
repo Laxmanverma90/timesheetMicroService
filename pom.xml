@@ -17,7 +17,7 @@
 	<properties>
 		<java.version>1.8</java.version>
 		<spring-cloud.version>Greenwich.SR3</spring-cloud.version>
-		<sonar.coverage.exclusions>**/entity/* ,**/dto/*,**/api/*,**/util/*,**/exception/*,**/model/*</sonar.coverage.exclusions>
+		<sonar.coverage.exclusions>**/entity/*,**/dto/*,**/util/*,**/exception/*,**/configuration/*</sonar.coverage.exclusions>
 	</properties>
 
 	<dependencies>
@@ -46,10 +46,10 @@
 			<artifactId>lombok</artifactId>
 			<optional>true</optional>
 		</dependency>
-<!-- 		<dependency> -->
-<!-- 			<groupId>org.springframework.cloud</groupId> -->
-<!-- 			<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId> -->
-<!-- 		</dependency> -->
+		<dependency>
+			<groupId>org.springframework.cloud</groupId>
+			<artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+		</dependency>
 		<dependency>
 			<groupId>org.jacoco</groupId>
 			<artifactId>jacoco-maven-plugin</artifactId>

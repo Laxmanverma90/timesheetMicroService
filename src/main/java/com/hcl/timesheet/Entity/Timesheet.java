@@ -1,4 +1,4 @@
-package com.hcl.timesheet.Entity;
+package com.hcl.timesheet.entity;
 
 import java.time.LocalDate;
 
